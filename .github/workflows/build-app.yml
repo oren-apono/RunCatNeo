@@ -1,0 +1,67 @@
+name: Build App
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Git ref (tag/branch/SHA) to build"
+        required: true
+        default: "1.0.3"
+
+jobs:
+  build:
+    name: Build Ad-Hoc Signed App
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: "/Applications/Xcode_26.6.app/Contents/Developer"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Show Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build Release
+        run: |
+          xcodebuild \
+            -project RunCatNeo.xcodeproj \
+            -scheme RunCatNeo \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            build
+
+      - name: Verify Bundle
+        run: |
+          APP=build/Build/Products/Release/RunCatNeo.app
+          codesign -dv --verbose=2 "$APP"
+          echo "--- bundle resources ---"
+          ls -la "$APP/Contents/Resources/"
+          echo "--- compiled asset catalogs ---"
+          find "$APP" -name 'Assets.car' -exec ls -la {} \;
+
+      - name: Package
+        run: |
+          ditto -c -k --keepParent \
+            build/Build/Products/Release/RunCatNeo.app \
+            RunCatNeo.zip
+          ls -la RunCatNeo.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: RunCatNeo-app
+          path: RunCatNeo.zip
+          retention-days: 7
